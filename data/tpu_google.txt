@@ -1,0 +1,72 @@
+export PROJECT_ID="ppt-project-382019"
+export ZONE="europe-west4-a" # You can change this to your desired zone
+export TPU_NAME="tpu-esmfold" # Choose a unique name for your TPU
+export TPU_IP_ADDRESS="10.164.0.4"
+export TPU_IP_ADDRESS="34.141.195.114"
+
+gcloud compute tpus tpu-vm create ${TPU_NAME} --project=${PROJECT_ID} --zone=${ZONE} --accelerator-type=v3-8 --version=tpu-vm-pt-1.13
+
+gcloud compute instances create ${TPU_NAME}-vm \
+  --project=${PROJECT_ID} \
+  --zone=${ZONE} \
+  --machine-type=n1-standard-4 \
+  --image-family=torch-xla \
+  --image-project=ml-images \
+  --boot-disk-size=200GB \
+  --scopes=https://www.googleapis.com/auth/cloud-platform
+
+tpu-esmfold-vm  europe-west4-a  n1-standard-4               10.164.0.4   34.141.195.114  RUNNING
+
+gcloud compute ssh ${TPU_NAME}-vm --zone=${ZONE} --project=${PROJECT_ID} -- -L 9009:localhost:9009
+
+
+export XRT_TPU_CONFIG="tpu_worker;0;${TPU_IP_ADDRESS}:8470"
+******************************
+export PJRT_DEVICE=TPU
+
+pip3 install https://storage.googleapis.com/tpu-pytorch/wheels/tpuvm/torch_xla-2.0-cp38-cp38-linux_x86_64.whl
+pip3 install https://storage.googleapis.com/tpu-pytorch/wheels/tpuvm/torch-2.0-cp38-cp38-linux_x86_64.whl
+pip3 install https://storage.googleapis.com/tpu-pytorch/wheels/tpuvm/torchvision-2.0-cp38-cp38-linux_x86_64.whl
+pip3 install torch_xla[tpuvm]
+pip3 install accelerate
+pip3 install mkl
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"/anaconda3/envs/esmfold/lib"
+echo $LD_LIBRARY_PATH
+
+/anaconda3/envs/esmfold/lib
+
+sudo ln -s /anaconda3/envs/esmfold/lib/libmkl_intel_lp64.so.2 /anaconda3/envs/esmfold/lib/libmkl_intel_lp64.so.1
+sudo ln -s /anaconda3/envs/esmfold/lib/libmkl_intel_thread.so.2 /anaconda3/envs/esmfold/lib/libmkl_intel_thread.so.1
+sudo ln -s /anaconda3/envs/esmfold/lib/libmkl_core.so.2 /anaconda3/envs/esmfold/lib/libmkl_core.so.1
+
+apt-get install glibc-source
+sudo ldconfig
+
+ldd /anaconda3/envs/esmfold/lib/python3.8/site-packages/torch/lib/libtorch.so
+
+
+git clone https://github.com/conchaeloko/DpoK-serotypeTropism.git
+conchaeloko
+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
+
+
+
+***
+https://www.kaggle.com/questions-and-answers/267735
+
+
+TPU v2/v3:
+
+    tpu-vm-pt-2.0 (pytorch-2.0)
+    tpu-vm-pt-1.13 (pytorch-1.13)
+    tpu-vm-pt-1.12 (pytorch-1.12)
+    tpu-vm-pt-1.11 (pytorch-1.11)
+    tpu-vm-pt-1.10 (pytorch-1.10)
+    v2-alpha (pytorch-1.8.1)
+
+TPU v4:
+
+    tpu-vm-v4-pt-2.0 (pytorch-2.0)
+    tpu-vm-v4-pt-1.13 (pytorch-1.13)
+
