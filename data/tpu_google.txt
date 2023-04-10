@@ -1,6 +1,6 @@
 export PROJECT_ID="ppt-project-382019"
-export ZONE="europe-west4-a" # You can change this to your desired zone
-export TPU_NAME="tpu-esmfold" # Choose a unique name for your TPU
+export ZONE="europe-west4-a" 
+export TPU_NAME="tpu-esmfold" 
 export TPU_IP_ADDRESS="10.164.0.4"
 export TPU_IP_ADDRESS="34.141.195.114"
 
