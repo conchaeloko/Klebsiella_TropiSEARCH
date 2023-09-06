@@ -40,23 +40,33 @@ path_ensemble = f"{path_work}/ficheros_28032023/ensemble_1908"
 # 2 - FUNCTIONS
 # --------------------------------------------------
 def load_dico_kltype(path):
-    str_keys_dico_kltype = json.load(open(path))
-    return {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}
+	"""
+	Input : path to the data
+	Output : the dictionary with the one-hot-encoded KLtype to its value
+	"""
+	str_keys_dico_kltype = json.load(open(path))
+	return {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}
 
-def get_nodes_id_single(B1A_index_file, pred_data_single, dpo_embeddings):
-    """Generates node IDs from the given index file and graph data."""
+def get_nodes_id_single(graph_data, dpo_embeddings):
+    """
+	Inputs : 
+	- graph_data : graph with the tested depolymerase
+	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
+	Output : A list of tuples with the (phage_id, kltype_id)
+	"""
     dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
-    B1A_index_file = tuple(zip(B1A_index_file[0].numpy(), B1A_index_file[1].numpy()))
-    return [(dpo_embeddings.index[tup[0]], dico_kltype[tuple(pred_data_single["A"]["x"][tup[1]].numpy())]) for tup in B1A_index_file]
-
+    B1A_index_file = tuple(zip(graph_data[("B1", "infects", "A")].edge_label_index[0].numpy(), graph_data[("B1", "infects", "A")].edge_label_index[1].numpy()))
+    return [(dpo_embeddings.index[tup[0]], dico_kltype[tuple(graph_data["A"]["x"][tup[1]].numpy())]) for tup in B1A_index_file]
 
 def graph_single_Dpo_pred(df_embeddings) : 
-	path_work = "/media/concha-eloko/Linux/PPT_clean"
-	path_ensemble = f"{path_work}/ficheros_28032023/ensemble_1908"
+	"""
+	Input : 
+	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
+	Output : A graph from the given dataframe embeddings
+	"""
 	# Load the template data :
 	pred_data_single = torch.load(f'{path_work}/template_graph.KLtypes.pt')
-	str_keys_dico_kltype = json.load(open(f"{path_work}/tensorToKLtypes.json"))
-	dico_kltype = {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}    
+	dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
 	# Defining the nodes :
 	n_dpos = len(df_embeddings)
 	pred_data_single["B1"].x = torch.empty((n_dpos, 0))
@@ -68,21 +78,15 @@ def graph_single_Dpo_pred(df_embeddings) :
 	pred_data_single['B1', 'infects', 'A'].edge_label_index = edge_index_B1_A.t().contiguous()
 	return pred_data_single
 
-def get_nodes_id_single(B1A_index_file,pred_data_single,dpo_embeddings,path_work_f = "/media/concha-eloko/Linux/PPT_clean") :
-	# data :
-	str_keys_dico_kltype = json.load(open(f"{path_work_f}/tensorToKLtypes.json"))
-	dico_kltype = {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}
-	B1A_index_file = B1A_index_file.numpy()
-	B1A_index_file = tuple(zip(B1A_index_file[0],B1A_index_file[1]))
-	id_file = [(dpo_embeddings.index[tup[0]] , dico_kltype[tuple(pred_data_single["A"]["x"][tup[1]].numpy())]) for tup in B1A_index_file]
-	return id_file
 
 @torch.no_grad()
 def make_predictions(model, data):
 	""" 
 	Inputs : 
+	- model : the GNN model used for the link predictions
+	- data : the graph computed by graph_single_Dpo_pred
 	Outputs : 
-	Function that  
+	the predictions and their corresponding probabilities  
 	"""
 	model.eval() 
 	output = model(data)
@@ -91,12 +95,15 @@ def make_predictions(model, data):
 	return predictions, probabilities
 
 		
-def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7], path_work_f = "/media/concha-eloko/Linux/PPT_clean" , path_ensemble_f = f"/media/concha-eloko/Linux/PPT_clean/ficheros_28032023/ensemble_1908") : 
+def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7]) : 
 	""" 
 	Inputs : 
-	Outputs : 
-	Function that 
+	- graph : The graph to make predictions on 
+	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
+	- ratios : the different GNN to use for the predictions (default 1,2,3,4,6,7, i.e all with an MCC > 0.5)
+	Outputs : A dictionary of the resulted probabilities for each positive predictions for a give item of the dpo_embeddings
 	"""
+	# ********************
 	# The TropiGAT model : 
 	class GNN(torch.nn.Module):
 	    def __init__(self, edge_type , conv, hidden_channels, heads, dropout): 
@@ -106,7 +113,6 @@ def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7], path_work_f = 
 	    def forward(self, x_dict, edge_index_dict):
 	        x = self.hetero_conv(x_dict, edge_index_dict)
 	        return x
-	# Classifier, Binary :
 	class EdgeDecoder(torch.nn.Module):
 	    def __init__(self, hidden_channels, heads):
 	        super().__init__()
@@ -130,29 +136,32 @@ def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7], path_work_f = 
 	        a_nodes =  graph_data.x_dict
 	        out = self.EdgeDecoder(a_nodes ,b1_nodes , graph_data)
 	        return out
-	# models object : 
+	# Model parameters : 
 	Dpo_classifier_models = {}
 	hidden_channels = 1000
 	conv = GATv2Conv
 	heads = 1
 	dropout = 0.1
 	ensemble = {i : f"model_ratio_{i}" for i in ratios}
-	for file in os.listdir(path_ensemble_f) : 
+	for file in os.listdir(path_ensemble) : 
 		if file[-2:] == "pt" and int(file.split(".")[3].split("Neg")[0]) in ensemble :
 			ratio = int(file.split(".")[3].split("Neg")[0])
 			model = Model(conv, hidden_channels, heads, dropout)
-			model.load_state_dict(torch.load(f"{path_ensemble_f}/{file}"))
+			model.load_state_dict(torch.load(f"{path_ensemble}/{file}"))
 			Dpo_classifier_models[ensemble[ratio]] = model
+			
+	# ********************
 	# data :
-	str_keys_dico_kltype = json.load(open(f"{path_work_f}/tensorToKLtypes.json"))
-	dico_kltype = {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}   
+	dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
+	
+	# ********************
 	# Run the predictions :
 	round_prediction = {}
 	for ratio in ratios : 
 		clean_results = {} 
 		model = Dpo_classifier_models[f"model_ratio_{ratio}"]
 		predictions, probabilities = make_predictions(model, graph)
-		ids = get_nodes_id_single(graph[("B1", "infects", "A")].edge_label_index, graph ,dpo_embeddings)
+		ids = get_nodes_id_single(graph ,dpo_embeddings)
 		results = tuple(zip(ids,predictions.numpy(),probabilities.numpy()))
 		positive_results = [pred for pred in results if int(pred[1]) == 1]
 		for pos_res in positive_results : 
@@ -177,37 +186,48 @@ def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7], path_work_f = 
 						round_prediction[prot][kltype] = round_prediction[prot][kltype] + clean_results[prot][kltype]
 	return round_prediction
 
-def format_predictions(round_prediction) :
+def format_predictions(round_prediction , sep = "__") :
 	""" 
 	Inputs : 
-	Outputs : 
-	Function that 
+	- The output of the function run_predictions
+	- The separater of the phage name and the dpo name (default "__')
+	Outputs : A dictionary of the results, with the data integrated for each phage
 	"""
 	final_results = {}
-	for protein,hits in round_prediction.items() : 
-		phage = protein.split("__")[0]
-		if phage not in final_results : 
-			tmp_hits = {}
-			for kltype in hits : 
-				if kltype in tmp_hits and hits[kltype] > tmp_hits[kltype]:
-					tmp_hits[kltype] = hits[kltype]
-				elif kltype in tmp_hits and hits[kltype] < tmp_hits[kltype]:
-					pass
-				elif kltype not in tmp_hits : 
-					tmp_hits[kltype] = hits[kltype]
-			final_results[phage] = tmp_hits
-		else :
-			for kltype in hits : 
-				if kltype in final_results[phage] and hits[kltype] > final_results[phage][kltype]:
-					final_results[phage][kltype] = hits[kltype]
-				elif kltype in final_results[phage] and hits[kltype] < final_results[phage][kltype]:
-					pass
-				elif kltype not in final_results[phage] : 
-					final_results[phage][kltype] = hits[kltype]
-	return final_results
+	try : 
+		for protein,hits in round_prediction.items() : 
+			phage = protein.split(sep)[0]
+			if phage not in final_results : 
+				tmp_hits = {}
+				for kltype in hits : 
+					if kltype in tmp_hits and hits[kltype] > tmp_hits[kltype]:
+						tmp_hits[kltype] = hits[kltype]
+					elif kltype in tmp_hits and hits[kltype] < tmp_hits[kltype]:
+						pass
+					elif kltype not in tmp_hits : 
+						tmp_hits[kltype] = hits[kltype]
+				final_results[phage] = tmp_hits
+			else :
+				for kltype in hits : 
+					if kltype in final_results[phage] and hits[kltype] > final_results[phage][kltype]:
+						final_results[phage][kltype] = hits[kltype]
+					elif kltype in final_results[phage] and hits[kltype] < final_results[phage][kltype]:
+						pass
+					elif kltype not in final_results[phage] : 
+						final_results[phage][kltype] = hits[kltype]
+		return final_results
+	except Exception as e:
+		return "Mind the way the dpos were named."
+		
 
 
 def get_top_n_kltypes(input_dict, n):
+	""" 
+	Inputs : 
+	- input_dict : the output of the format_predictions
+	- n : the number of KLtype to return
+	Outputs : a dictionary with the top n KLtypes and their scores
+	"""
 	output_dict = {}
 	for key, sub_dict in input_dict.items():
 		# Sort the sub_dict by values (in descending order) and get top n
@@ -217,6 +237,10 @@ def get_top_n_kltypes(input_dict, n):
 	return output_dict
 
 def clean_print(dico) :
+	""" 
+	Inputs : a dico
+	Outputs : pretty printed dico
+	"""
 	pp = pprint.PrettyPrinter(width = 150, sort_dicts = True, compact = True)
 	out = pp.pprint(dico)
 	return out 
@@ -224,9 +248,7 @@ def clean_print(dico) :
 	
 class CustomEncoder(json.JSONEncoder):
 	""" 
-	Inputs : 
-	Outputs : 
-	Function that 
+	For later ...
 	"""
 	def default(self, obj):
 		if isinstance(obj, np.float32):
