@@ -31,6 +31,10 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, label_binarize, OneHotEncoder
 
+# TropiGAT modules
+import TropiGAT_graph
+import TropiGAT_models
+
 
 # 1 - GLOBAL VARIABLES
 # --------------------------------------------------
