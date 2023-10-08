@@ -80,7 +80,6 @@ class TropiGAT_big_module(torch.nn.Module):
                                           )        
     def forward(self, graph_data):
         x_B1_dict = self.hetero_conv(graph_data.x_dict, graph_data.edge_index_dict)
-        #x = self.linear_layers(x)
         x = self.linear_layers(x_B1_dict["B1"])
         return x.view(-1)
 
@@ -131,7 +130,7 @@ class EarlyStopping:
         self.early_stop = False
         self.best_model = None  # add this line to keep the best model
         self.metric = metric
-		self.rounds = rounds
+		#self.rounds = rounds
 
     def __call__(self, val_metric, model):
         if self.metric == 'loss':
@@ -153,6 +152,9 @@ class EarlyStopping:
     def save_checkpoint(self, model):
         '''Saves model when early stopping is triggered.'''
         torch.save(model, self.path)
+
+
+
 		
 if __name__ == "__main__":
     main()

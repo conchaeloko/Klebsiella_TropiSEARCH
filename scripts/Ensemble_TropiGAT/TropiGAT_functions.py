@@ -44,202 +44,97 @@ path_ensemble = f"{path_work}/ficheros_28032023/ensemble_1908"
 
 # 2 - FUNCTIONS
 # --------------------------------------------------
-def load_dico_kltype(path):
-	"""
-	Input : path to the data
-	Output : the dictionary with the one-hot-encoded KLtype to its value
-	"""
-	str_keys_dico_kltype = json.load(open(path))
-	return {tuple(map(int, key.strip('()').split(','))): value for key, value in str_keys_dico_kltype.items()}
-
-def get_nodes_id_single(graph_data, dpo_embeddings):
+def make_query_graph(embeddings) :
     """
-	Inputs : 
-	- graph_data : graph with the tested depolymerase
-	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
-	Output : A list of tuples with the (phage_id, kltype_id)
+    This function builds the query graph for the ensemble model.
+    Input : A list of the ESM2 embeddings of the depolymerase 
+    Output : The query graph
+    """
+    query_graph = HeteroData()
+    query_graph["B1"].x = torch.empty((1, 0))
+    query_graph["B2"].x = torch.tensor(embeddings , dtype=torch.float)
+    edge_index_B2_B1 = torch.tensor([[0,0]] , dtype=torch.long)
+    query_graph['B2', 'expressed', 'B1'].edge_index = edge_index_B2_B1.t().contiguous()
+    
+    return query_graph
+    
+def make_ensemble_TropiGAT(path_ensemble) : 
 	"""
-    dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
-    B1A_index_file = tuple(zip(graph_data[("B1", "infects", "A")].edge_label_index[0].numpy(), graph_data[("B1", "infects", "A")].edge_label_index[1].numpy()))
-    return [(dpo_embeddings.index[tup[0]], dico_kltype[tuple(graph_data["A"]["x"][tup[1]].numpy())]) for tup in B1A_index_file]
-
-def graph_single_Dpo_pred(df_embeddings) : 
+	This function builds a dictionary with all the models that are part of the TropiGAT predictor
+	Input : Path of the models
+	Output : Dictionary
+	# Make a json file with the versions of the GNN corresponding to each KL types
+	# Load it
+	# Create the correct model instance (TropiGAT_small_module or TropiGAT_big_module)
 	"""
-	Input : 
-	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
-	Output : A graph from the given dataframe embeddings
-	"""
-	# Load the template data :
-	pred_data_single = torch.load(f'{path_work}/template_graph.KLtypes.pt')
-	dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
-	# Defining the nodes :
-	n_dpos = len(df_embeddings)
-	pred_data_single["B1"].x = torch.empty((n_dpos, 0))
-	pred_data_single["B2"].x = torch.tensor(df_embeddings.iloc[:, :1280].values , dtype=torch.float)
-	# Defining the edge_file :
-	edge_index_B2_B1 = torch.tensor([[i , i] for i in range(n_dpos)] , dtype=torch.long)
-	pred_data_single['B2', 'expressed', 'B1'].edge_index = edge_index_B2_B1.t().contiguous()
-	edge_index_B1_A = torch.tensor([[i,j] for i in range(n_dpos) for j in range(len(pred_data_single["A"].x))] , dtype=torch.long)
-	pred_data_single['B1', 'infects', 'A'].edge_label_index = edge_index_B1_A.t().contiguous()
-	return pred_data_single
-
+	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df.tsv", sep = "\t" ,  header = 0)
+	DF_info_lvl_0 = DF_info[~DF_info["KL_type_LCA"].str.contains("\\|")]
+	DF_info_lvl_0 = DF_info_lvl_0.drop_duplicates(subset = ["Infected_ancestor","index","prophage_id"] , keep = "first").reset_index(drop=True)
+	df_prophages = DF_info_lvl_0.drop_duplicates(subset = ["Phage"])
+	dico_prophage_count = dict(Counter(df_prophages["KL_type_LCA"]))
+	dico_ensemble = {}
+	for GNN_model in os.listdir(path_ensemble) :
+		if GNN_model[-2:] == "pt" : 
+			KL_type = GNN_model.split(".")[0]
+			if dico_prophage_count[KL_type] >= 125 : 
+				model = TropiGAT_models.TropiGAT_big_module(hidden_channels = 1280 , heads = 1)
+			else :
+				model = TropiGAT_models.TropiGAT_small_module(hidden_channels = 1280 , heads = 1)
+			model.load_state_dict(torch.load(f"{path_ensemble}/{GNN_model}"))
+			dico_ensemble[KL_type] = model
+		
+	return dico_ensemble
 
 @torch.no_grad()
 def make_predictions(model, data):
-	""" 
-	Inputs : 
-	- model : the GNN model used for the link predictions
-	- data : the graph computed by graph_single_Dpo_pred
-	Outputs : 
-	the predictions and their corresponding probabilities  
-	"""
-	model.eval() 
-	output = model(data)
-	probabilities = torch.sigmoid(output)  # Convert output to probabilities
-	predictions = probabilities.round()  # Convert probabilities to class labels
-	return predictions, probabilities
+    """
+    This generic function run the prediction of a binary model
+    Inputs : The model, the query data
+    Ouput : the prediction and associated probability
+    """
+    model.eval() 
+    output = model(data)
+    probabilities = torch.sigmoid(output)
+    predictions = probabilities.round() 
+    
+    return predictions, round(probabilities.item() , 4) 
+        
+def run_prediction(query_graph, dico_ensemble) :
+    dico_predictions = {}
+    for KL_type in dico_ensemble :
+        model = dico_ensemble[KL_type]
+        prediction, probabilities = make_predictions(model, query_graph)
+        if int(prediction) == 1 :
+            dico_predictions[KL_type] = probabilities
+        else :
+            continue
 
-		
-def run_predictions(graph,dpo_embeddings ,ratios = [1,2,3,4,6,7]) : 
-	""" 
-	Inputs : 
-	- graph : The graph to make predictions on 
-	- dpo_embeddings : dataframe of with the depolymerase name as index, ESM2 embeddings in iloc[1:1281]
-	- ratios : the different GNN to use for the predictions (default 1,2,3,4,6,7, i.e all with an MCC > 0.5)
-	Outputs : A dictionary of the resulted probabilities for each positive predictions for a give item of the dpo_embeddings
-	"""
-	# ********************
-	# The TropiGAT model : 
-	class GNN(torch.nn.Module):
-	    def __init__(self, edge_type , conv, hidden_channels, heads, dropout): 
-	        super().__init__()
-	        self.conv = conv((-1,-1), hidden_channels, add_self_loops = False, heads = heads, dropout = dropout, shared_weights = True)
-	        self.hetero_conv = HeteroConv({edge_type: self.conv})
-	    def forward(self, x_dict, edge_index_dict):
-	        x = self.hetero_conv(x_dict, edge_index_dict)
-	        return x
-	class EdgeDecoder(torch.nn.Module):
-	    def __init__(self, hidden_channels, heads):
-	        super().__init__()
-	        self.lin1 = torch.nn.Linear(heads*hidden_channels + 127, 512)
-	        self.lin2 = torch.nn.Linear(512, 1)
-	    def forward(self, x_dict_A , x_dict_B1, graph_data):
-	        edge_type = ("B1", "infects", "A")
-	        edge_feat_A = x_dict_A["A"][graph_data[edge_type].edge_label_index[1]]
-	        edge_feat_B1 = x_dict_B1["B1"][graph_data[edge_type].edge_label_index[0]]
-	        features_phage = torch.cat((edge_feat_A ,edge_feat_B1), dim=-1)
-	        x = self.lin1(features_phage).relu()
-	        x = self.lin2(x)
-	        return x.view(-1)
-	class Model(torch.nn.Module):
-	    def __init__(self, conv, hidden_channels, heads, dropout):
-	        super().__init__()
-	        self.single_layer_model = GNN(("B2", "expressed", "B1") ,conv, hidden_channels,heads,dropout)
-	        self.EdgeDecoder = EdgeDecoder(hidden_channels,heads)
-	    def forward(self, graph_data):
-	        b1_nodes = self.single_layer_model(graph_data.x_dict , graph_data.edge_index_dict)
-	        a_nodes =  graph_data.x_dict
-	        out = self.EdgeDecoder(a_nodes ,b1_nodes , graph_data)
-	        return out
-	# Model parameters : 
-	Dpo_classifier_models = {}
-	hidden_channels = 1000
-	conv = GATv2Conv
-	heads = 1
-	dropout = 0.1
-	ensemble = {i : f"model_ratio_{i}" for i in ratios}
-	for file in os.listdir(path_ensemble) : 
-		if file[-2:] == "pt" and int(file.split(".")[3].split("Neg")[0]) in ensemble :
-			ratio = int(file.split(".")[3].split("Neg")[0])
-			model = Model(conv, hidden_channels, heads, dropout)
-			model.load_state_dict(torch.load(f"{path_ensemble}/{file}"))
-			Dpo_classifier_models[ensemble[ratio]] = model
-			
-	# ********************
-	# data :
-	dico_kltype = load_dico_kltype(f"{path_work}/tensorToKLtypes.json")
-	
-	# ********************
-	# Run the predictions :
-	round_prediction = {}
-	for ratio in ratios : 
-		clean_results = {} 
-		model = Dpo_classifier_models[f"model_ratio_{ratio}"]
-		predictions, probabilities = make_predictions(model, graph)
-		ids = get_nodes_id_single(graph ,dpo_embeddings)
-		results = tuple(zip(ids,predictions.numpy(),probabilities.numpy()))
-		positive_results = [pred for pred in results if int(pred[1]) == 1]
-		for pos_res in positive_results : 
-			prot = pos_res[0][0]
-			kltype = pos_res[0][1]
-			score = pos_res[2]
-			a = {}
-			a[kltype] = score
-			if score > 0.5 : 
-				if prot not in clean_results : 
-					clean_results[prot] = a
-				else :
-					clean_results[prot].update(a)
-		for prot in clean_results :
-			if prot not in round_prediction : 
-				round_prediction[prot] = clean_results[prot]
-			else :
-				for kltype in clean_results[prot] :
-					if kltype not in round_prediction[prot] : 
-						round_prediction[prot][kltype] = clean_results[prot][kltype]
-					else :
-						round_prediction[prot][kltype] = round_prediction[prot][kltype] + clean_results[prot][kltype]
-	return round_prediction
+    return dico_predictions
 
-def format_predictions(round_prediction , sep = "__") :
-	""" 
-	Inputs : 
-	- The output of the function run_predictions
-	- The separater of the phage name and the dpo name (default "__')
-	Outputs : A dictionary of the results, with the data integrated for each phage
-	"""
-	final_results = {}
-	try : 
-		for protein,hits in round_prediction.items() : 
-			phage = protein.split(sep)[0]
-			if phage not in final_results : 
-				tmp_hits = {}
-				for kltype in hits : 
-					if kltype in tmp_hits and hits[kltype] > tmp_hits[kltype]:
-						tmp_hits[kltype] = hits[kltype]
-					elif kltype in tmp_hits and hits[kltype] < tmp_hits[kltype]:
-						pass
-					elif kltype not in tmp_hits : 
-						tmp_hits[kltype] = hits[kltype]
-				final_results[phage] = tmp_hits
-			else :
-				for kltype in hits : 
-					if kltype in final_results[phage] and hits[kltype] > final_results[phage][kltype]:
-						final_results[phage][kltype] = hits[kltype]
-					elif kltype in final_results[phage] and hits[kltype] < final_results[phage][kltype]:
-						pass
-					elif kltype not in final_results[phage] : 
-						final_results[phage][kltype] = hits[kltype]
-		return final_results
-	except Exception as e:
-		return "Mind the way the dpos were named."
-		
-
-
-def get_top_n_kltypes(input_dict, n):
-	""" 
-	Inputs : 
-	- input_dict : the output of the format_predictions
-	- n : the number of KLtype to return
-	Outputs : a dictionary with the top n KLtypes and their scores
-	"""
-	output_dict = {}
-	for key, sub_dict in input_dict.items():
-		# Sort the sub_dict by values (in descending order) and get top n
-		top_n_kl = sorted(sub_dict.items(), key=lambda x: x[1], reverse=True)[:n]
-		# Add to output_dict
-		output_dict[key] = top_n_kl
-	return output_dict
+def format_predictions(predictions, sep = "__") : 
+    final_results = {}
+    for protein,hits in predictions.items() : 
+        phage = protein.split(sep)[0]
+        if phage not in final_results : 
+            tmp_hits = {}
+            for kltype in hits : 
+                if kltype in tmp_hits and hits[kltype] > tmp_hits[kltype]:
+                    tmp_hits[kltype] = hits[kltype]
+                elif kltype in tmp_hits and hits[kltype] < tmp_hits[kltype]:
+                    pass
+                elif kltype not in tmp_hits : 
+                    tmp_hits[kltype] = hits[kltype]
+            final_results[phage] = tmp_hits
+        else :
+            for kltype in hits : 
+                if kltype in final_results[phage] and hits[kltype] > final_results[phage][kltype]:
+                    final_results[phage][kltype] = hits[kltype]
+                elif kltype in final_results[phage] and hits[kltype] < final_results[phage][kltype]:
+                    pass
+                elif kltype not in final_results[phage] : 
+                    final_results[phage][kltype] = hits[kltype]
+    return final_results
+        
 
 def clean_print(dico) :
 	""" 

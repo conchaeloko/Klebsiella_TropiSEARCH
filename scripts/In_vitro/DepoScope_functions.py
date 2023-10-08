@@ -19,10 +19,10 @@ class Dpo_classifier(nn.Module):
         super(Dpo_classifier, self).__init__()
         self.max_length = 1024
         self.pretrained_model = pretrained_model
-        self.conv1 = nn.Conv1d(1, 64, kernel_size=5, stride=1)  # Convolutional layer
-        self.conv2 = nn.Conv1d(64, 128, kernel_size=5, stride=1)  # Convolutional layer
-        self.fc1 = nn.Linear(128 * (self.max_length - 2 * (5 - 1)), 32)  # calculate the output shape after 2 conv layers
-        self.classifier = nn.Linear(32, 1)  # Binary classification
+        self.conv1 = nn.Conv1d(1, 64, kernel_size=5, stride=1) 
+        self.conv2 = nn.Conv1d(64, 128, kernel_size=5, stride=1) 
+        self.fc1 = nn.Linear(128 * (self.max_length - 2 * (5 - 1)), 32)
+        self.classifier = nn.Linear(32, 1) 
 
     def make_prediction(self, fasta_txt):
         input_ids = tokenizer.encode(fasta_txt, truncation=True, return_tensors='pt')
@@ -30,7 +30,7 @@ class Dpo_classifier(nn.Module):
             outputs = self.pretrained_model(input_ids)
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
             token_probs, token_ids = torch.max(probs, dim=-1)            
-            tokens = token_ids.view(1, -1) # ensure 2D shape
+            tokens = token_ids.view(1, -1)
             return tokens
 
     def pad_or_truncate(self, tokens):
@@ -48,12 +48,12 @@ class Dpo_classifier(nn.Module):
             tokens = self.pad_or_truncate(tokens)
             tokens_batch.append(tokens)
         
-        outputs = torch.cat(tokens_batch).view(batch_size, 1, self.max_length)  # ensure 3D shape
-        outputs = outputs.float()  # Convert to float
+        outputs = torch.cat(tokens_batch).view(batch_size, 1, self.max_length) 
+        outputs = outputs.float() 
         
         out = F.relu(self.conv1(outputs))
         out = F.relu(self.conv2(out))
-        out = out.view(batch_size, -1)  # Flatten the tensor
+        out = out.view(batch_size, -1)
         out = F.relu(self.fc1(out))
         out = self.classifier(out)
         return out, outputs
@@ -87,7 +87,7 @@ def find_longest_non_zero_suite_with_n_zeros(lst, n):
 
 
 def plot_token(tokens) :
-    tokens = np.array(tokens)  # convert your list to numpy array for convenience
+    tokens = np.array(tokens) 
     plt.figure(figsize=(10,6))
     for i in range(len(tokens) - 1):
         if tokens[i] == 0:
@@ -113,8 +113,8 @@ def predict_sequence(model, sequence):
     with torch.no_grad():
         sequence = [sequence]  # Wrap the sequence in a list to match the model's input format
         outputs, sequence_outputs = model(sequence)
-        probas = torch.sigmoid(outputs)  # Apply sigmoid activation for binary classification
-        predictions = (probas > 0.5).float()  # Convert probabilities to binary predictions
+        probas = torch.sigmoid(outputs)  
+        predictions = (probas > 0.5).float()  
         sequence_outputs_list = sequence_outputs.cpu().numpy().tolist()[0][0]
         prob_predicted = probas[0].item()
         return (predictions.item(), prob_predicted), sequence_outputs_list
