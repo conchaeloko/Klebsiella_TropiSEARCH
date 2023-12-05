@@ -53,9 +53,9 @@ class TropiGAT_small_module(torch.nn.Module):
                                            nn.Linear(480 , 1))
         
     def forward(self, graph_data):
-        x_B1_dict = self.hetero_conv(graph_data.x_dict, graph_data.edge_index_dict)
+        x_B1_dict , weights = self.hetero_conv(graph_data.x_dict, graph_data.edge_index_dict, return_attention_weights=True)
         x = self.linear_layers(x_B1_dict["B1"])
-        return x.view(-1)
+        return x.view(-1) , weights
 
 class TropiGAT_big_module(torch.nn.Module):
     def __init__(self,hidden_channels, heads, edge_type = ("B2", "expressed", "B1") ,dropout = 0.2, conv = GATv2Conv):
@@ -79,16 +79,16 @@ class TropiGAT_big_module(torch.nn.Module):
                                            nn.Linear(240, 1)
                                           )        
     def forward(self, graph_data):
-        x_B1_dict = self.hetero_conv(graph_data.x_dict, graph_data.edge_index_dict)
+        x_B1_dict, weights = self.hetero_conv(graph_data.x_dict, graph_data.edge_index_dict, return_attention_weights=True)
         x = self.linear_layers(x_B1_dict["B1"])
-        return x.view(-1)
+        return x.view(-1) , weights
 
 
 
 def train(model, graph):
     model.train()
     optimizer.zero_grad()
-    out_train = model(graph)
+    out_train , weights = model(graph)
     loss = criterion(out_train[graph["B1"].train_mask], graph["B1"].y[graph["B1"].train_mask])
     loss.backward()
     optimizer.step()
@@ -98,7 +98,7 @@ def train(model, graph):
 @torch.no_grad()
 def evaluate(model, graph,criterion, mask):
     model.eval()
-    out_eval = model(graph)
+    out_eval , weights = model(graph)
     logging.info(mask.shape)
     pred = out_eval[mask]
     pred = torch.sigmoid(out_eval).round()
@@ -111,7 +111,7 @@ def evaluate(model, graph,criterion, mask):
     mcc = matthews_corrcoef(labels, pred)
     accuracy = accuracy_score(labels, pred)
     auc = roc_auc_score(labels, out_eval[mask])
-    return val_loss.item(), (f1, precision, recall, mcc, accuracy, auc)
+    return val_loss.item(), (f1, precision, recall, mcc, accuracy, auc) , weights
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""

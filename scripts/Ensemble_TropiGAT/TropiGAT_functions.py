@@ -86,18 +86,20 @@ def make_ensemble_TropiGAT(path_ensemble) :
 	return dico_ensemble
 
 @torch.no_grad()
-def make_predictions(model, data):
+def make_predictions(model, data, compute_weights = False):
     """
     This generic function run the prediction of a binary model
     Inputs : The model, the query data
     Ouput : the prediction and associated probability
     """
     model.eval() 
-    output = model(data)
+    output, weights = model(data)
     probabilities = torch.sigmoid(output)
     predictions = probabilities.round() 
-    
-    return predictions, round(probabilities.item() , 4) 
+	if compute_weights == True :
+		return predictions, round(probabilities.item() , 4), weights
+    else :
+	    return predictions, round(probabilities.item() , 4) 
         
 def run_prediction(query_graph, dico_ensemble) :
     dico_predictions = {}
