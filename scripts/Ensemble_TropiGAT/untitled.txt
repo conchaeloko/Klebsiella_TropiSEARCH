@@ -1,0 +1,1 @@
+tailored_KLtypes = ["KL3" , "KL8", "KL12", "KL13", "KL23", "KL38", "KL46" ,"KL62"]
