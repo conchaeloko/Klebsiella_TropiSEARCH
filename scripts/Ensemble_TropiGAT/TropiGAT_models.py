@@ -85,15 +85,67 @@ class TropiGAT_big_module(torch.nn.Module):
         x = self.linear_layers(x_B1_dict["B1"])
         return x.view(-1) 
 
+
+# Version of the model capturing the attention weights :
+class TropiGAT_small_module_attention(torch.nn.Module):
+    def __init__(self,hidden_channels, heads, edge_type = ("B2", "expressed", "B1") ,dropout = 0.2, conv = GATv2Conv):
+        super().__init__()
+        # GATv2 module :
+        self.conv = conv((-1,-1), hidden_channels, add_self_loops = False, heads = heads, dropout = dropout, shared_weights = True, return_attention_weights = True)
+        self.hetero_conv = HeteroConv({edge_type: self.conv})
+        # FNN layers : 
+        self.linear_layers = nn.Sequential(nn.Linear(heads*hidden_channels, 1280),
+                                           nn.BatchNorm1d(1280),
+                                           nn.LeakyReLU(),
+                                           torch.nn.Dropout(dropout),
+                                           nn.Linear(1280, 480),
+                                           nn.BatchNorm1d(480),
+                                           nn.LeakyReLU(),
+                                           torch.nn.Dropout(dropout),
+                                           nn.Linear(480 , 1))
+        
+    def forward(self, graph_data):
+        x_B1_dict, weights  = self.conv((graph_data.x_dict["B2"], graph_data.x_dict["B1"]), graph_data.edge_index_dict[("B2", "expressed", "B1")], return_attention_weights=True)
+        x = self.linear_layers(x_B1_dict)
+        return x.view(-1), weights 
+
+class TropiGAT_big_module_attention(torch.nn.Module):
+    def __init__(self,hidden_channels, heads, edge_type = ("B2", "expressed", "B1") ,dropout = 0.2, conv = GATv2Conv):
+        super().__init__()
+        # GATv2 module :
+        self.conv = conv((-1,-1), hidden_channels, add_self_loops = False, heads = heads, dropout = dropout, shared_weights = True, return_attention_weights = True)
+        self.hetero_conv = HeteroConv({edge_type: self.conv})
+        # FNN layers : 
+        self.linear_layers = nn.Sequential(nn.Linear(heads*hidden_channels, 1280),
+                                           nn.BatchNorm1d(1280),
+                                           nn.LeakyReLU(),
+                                           torch.nn.Dropout(dropout),
+                                           nn.Linear(1280, 720),
+                                           nn.BatchNorm1d(720),
+                                           nn.LeakyReLU(),
+                                           torch.nn.Dropout(dropout),
+                                           nn.Linear(720 , 240),
+                                           nn.BatchNorm1d(240),
+                                           nn.LeakyReLU(),
+                                           torch.nn.Dropout(dropout),
+                                           nn.Linear(240, 1)
+                                          )        
+    def forward(self, graph_data):
+        x_B1_dict , weights = self.conv((graph_data.x_dict["B2"], graph_data.x_dict["B1"]),graph_data.edge_index_dict[("B2", "expressed", "B1")] , return_attention_weights=True)
+        x = self.linear_layers(x_B1_dict)
+        return x.view(-1) , weights
+
+
+
 # GrapheSage version of the model : 
 class TropiGAT_small_sage_module(torch.nn.Module):
-    def __init__(self,hidden_channels, edge_type = ("B2", "expressed", "B1") , conv = SAGEConv):
+    def __init__(self,hidden_channels, edge_type = ("B2", "expressed", "B1") ,dropout = 0.2, conv = SAGEConv):
         super().__init__()
         # GATv2 module :
         self.conv = conv((-1,-1), hidden_channels)
         self.hetero_conv = HeteroConv({edge_type: self.conv})
         # FNN layers : 
-        self.linear_layers = nn.Sequential(nn.Linear(heads*hidden_channels, 1280),
+        self.linear_layers = nn.Sequential(nn.Linear(hidden_channels, 1280),
                                            nn.BatchNorm1d(1280),
                                            nn.LeakyReLU(),
                                            torch.nn.Dropout(dropout),
@@ -109,13 +161,13 @@ class TropiGAT_small_sage_module(torch.nn.Module):
         return x.view(-1) 
 
 class TropiGAT_big_sage_module(torch.nn.Module):
-    def __init__(self,hidden_channels, edge_type = ("B2", "expressed", "B1") , conv = SAGEConv):
+    def __init__(self,hidden_channels, edge_type = ("B2", "expressed", "B1") ,dropout = 0.2, conv = SAGEConv):
         super().__init__()
         # GATv2 module :
         self.conv = conv((-1,-1), hidden_channels)
         self.hetero_conv = HeteroConv({edge_type: self.conv})
         # FNN layers : 
-        self.linear_layers = nn.Sequential(nn.Linear(heads*hidden_channels, 1280),
+        self.linear_layers = nn.Sequential(nn.Linear(hidden_channels, 1280),
                                            nn.BatchNorm1d(1280),
                                            nn.LeakyReLU(),
                                            torch.nn.Dropout(dropout),

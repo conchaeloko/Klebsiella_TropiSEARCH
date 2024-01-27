@@ -58,7 +58,7 @@ def make_query_graph(embeddings) :
     
     return query_graph
     
-def make_ensemble_TropiGAT(path_ensemble) : 
+def make_ensemble_TropiGAT_old(path_ensemble) : 
 	"""
 	This function builds a dictionary with all the models that are part of the TropiGAT predictor
 	Input : Path of the models
@@ -85,6 +85,101 @@ def make_ensemble_TropiGAT(path_ensemble) :
 		
 	return dico_ensemble
 
+def make_ensemble_TropiGAT(path_ensemble) : 
+	"""
+	This function builds a dictionary with all the models that are part of the TropiGAT predictor
+	Input : Path of the models
+	Output : Dictionary
+	# Make a json file with the versions of the GNN corresponding to each KL types
+	# Load it
+	# Create the correct model instance (TropiGAT_small_module or TropiGAT_big_module)
+	"""
+	errors = []
+	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df_v2.filtered.tsv", sep = "\t" ,  header = 0)
+	DF_info_lvl_0 = DF_info.copy()
+	df_prophages = DF_info_lvl_0.drop_duplicates(subset = ["Phage"])
+	dico_prophage_count = dict(Counter(df_prophages["KL_type_LCA"]))
+	dico_ensemble = {}
+	for GNN_model in os.listdir(path_ensemble) :
+		if GNN_model[-2:] == "pt" :
+			KL_type = GNN_model.split(".")[0]
+			try :
+				if dico_prophage_count[KL_type] >= 125 : 
+					model = TropiGAT_models.TropiGAT_big_module(hidden_channels = 1280 , heads = 1)
+				else :
+					model = TropiGAT_models.TropiGAT_small_module(hidden_channels = 1280 , heads = 1)
+				model.load_state_dict(torch.load(f"{path_ensemble}/{GNN_model}"))
+				dico_ensemble[KL_type] = model
+			except Exception as e :
+				a = (KL_type , dico_prophage_count[KL_type], e)
+				errors.append(a)
+		
+	return dico_ensemble , errors
+
+
+def make_ensemble_TropiGAT_attention(path_ensemble) : 
+	"""
+	This function builds a dictionary with all the models that are part of the TropiGAT predictor
+	Input : Path of the models
+	Output : Dictionary , attention weights
+	# Make a json file with the versions of the GNN corresponding to each KL types
+	# Load it
+	# Create the correct model instance (TropiGAT_small_module or TropiGAT_big_module)
+	"""
+	errors = []
+	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df_v2.filtered.tsv", sep = "\t" ,  header = 0)
+	DF_info_lvl_0 = DF_info.copy()
+	df_prophages = DF_info_lvl_0.drop_duplicates(subset = ["Phage"])
+	dico_prophage_count = dict(Counter(df_prophages["KL_type_LCA"]))
+	dico_ensemble = {}
+	for GNN_model in os.listdir(path_ensemble) :
+		if GNN_model[-2:] == "pt" :
+			KL_type = GNN_model.split(".")[0]
+			try :
+				if dico_prophage_count[KL_type] >= 125 : 
+					model = TropiGAT_models.TropiGAT_big_module_attention(hidden_channels = 1280 , heads = 1)
+				else :
+					model = TropiGAT_models.TropiGAT_small_module_attention(hidden_channels = 1280 , heads = 1)
+				model.load_state_dict(torch.load(f"{path_ensemble}/{GNN_model}"))
+				dico_ensemble[KL_type] = model
+			except Exception as e :
+				a = (KL_type , dico_prophage_count[KL_type], e)
+				errors.append(a)
+		
+	return dico_ensemble , errors
+
+
+def make_ensemble_TropiSAGE(path_ensemble) : 
+	"""
+	This function builds a dictionary with all the models that are part of the TropiGAT predictor
+	Input : Path of the models
+	Output : Dictionary
+	# Make a json file with the versions of the GNN corresponding to each KL types
+	# Load it
+	# Create the correct model instance (TropiGAT_small_module or TropiGAT_big_module)
+	"""
+	errors = []
+	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df_v2.filtered.tsv", sep = "\t" ,  header = 0)
+	DF_info_lvl_0 = DF_info.copy()
+	df_prophages = DF_info_lvl_0.drop_duplicates(subset = ["Phage"])
+	dico_prophage_count = dict(Counter(df_prophages["KL_type_LCA"]))
+	dico_ensemble = {}
+	for GNN_model in os.listdir(path_ensemble) :
+		if GNN_model[-2:] == "pt" :
+			KL_type = GNN_model.split(".")[0]
+			try :
+				if dico_prophage_count[KL_type] >= 125 : 
+					model = TropiGAT_models.TropiGAT_big_sage_module(hidden_channels = 1280)
+				else :
+					model = TropiGAT_models.TropiGAT_small_sage_module(hidden_channels = 1280)
+				model.load_state_dict(torch.load(f"{path_ensemble}/{GNN_model}"))
+				dico_ensemble[KL_type] = model
+			except Exception as e :
+				a = (KL_type , dico_prophage_count[KL_type], e)
+				errors.append(a)
+		
+	return dico_ensemble , errors
+
 def make_ensemble_tailored_TropiGAT(path_ensemble , tailor_dico) : 
 	"""
 	This function builds a dictionary with all the models that are part of the TropiGAT predictor
@@ -94,9 +189,10 @@ def make_ensemble_tailored_TropiGAT(path_ensemble , tailor_dico) :
 	# Load it
 	# Create the correct model instance (TropiGAT_small_module or TropiGAT_big_module)
 	"""
-	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df.tsv", sep = "\t" ,  header = 0)
-	DF_info_lvl_0 = DF_info[~DF_info["KL_type_LCA"].str.contains("\\|")]
-	DF_info_lvl_0 = DF_info_lvl_0.drop_duplicates(subset = ["Infected_ancestor","index","prophage_id"] , keep = "first").reset_index(drop=True)
+	DF_info = pd.read_csv(f"{path_work}/TropiGATv2.final_df_v2.filtered.tsv", sep = "\t" ,  header = 0)
+	#DF_info_lvl_0 = DF_info[~DF_info["KL_type_LCA"].str.contains("\\|")]
+	#DF_info_lvl_0 = DF_info_lvl_0.drop_duplicates(subset = ["Infected_ancestor","index","prophage_id"] , keep = "first").reset_index(drop=True)
+	DF_info_lvl_0 = DF_info.copy()
 	df_prophages = DF_info_lvl_0.drop_duplicates(subset = ["Phage"])
 	dico_prophage_count = dict(Counter(df_prophages["KL_type_LCA"]))
 	dico_ensemble = {}
