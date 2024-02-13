@@ -144,3 +144,60 @@ def build_graph_masking(graph_data_input, dico_prophage_kltype_associated , df_i
 	graph_data["B1"].eval_mask = torch.tensor(eval_mask)
 	
 	return graph_data
+
+
+def build_graph_masking_v2(graph_data_input, dico_prophage_kltype_associated , df_info, KL_type, ratio , f_train, f_test, f_eval, seed = 1) : 
+    # **************************************************************
+    # Indexation process  
+	graph_data = graph_data_input.clone()
+	indexation_nodes_A = df_info["Infected_ancestor"].unique().tolist()  
+	indexation_nodes_B1 = df_info["Phage"].unique().tolist()
+	indexation_nodes_B2 = df_info["index"].unique().tolist() 
+	ID_nodes_A = {item:index for index, item in enumerate(indexation_nodes_A)}
+	ID_nodes_A_r = {index:item for index, item in enumerate(indexation_nodes_A)}
+	ID_nodes_B1 = {item:index for index, item in enumerate(indexation_nodes_B1)}
+	ID_nodes_B1_r = {index:item for index, item in enumerate(indexation_nodes_B1)}
+	ID_nodes_B2 = {item:index for index, item in enumerate(indexation_nodes_B2)}
+	ID_nodes_B2_r = {index:item for index, item in enumerate(indexation_nodes_B2)}
+	# **************************************************************
+	# Make the Y file : 
+	B1_labels = df_info.drop_duplicates(subset = ["Phage"], keep = "first")["KL_type_LCA"].apply(lambda x : 1 if x == KL_type else 0).to_list()
+	graph_data["B1"].y = torch.tensor(B1_labels)
+	# **************************************************************
+	# Make mask files :
+	# define the seed :
+	random.seed(seed)
+	# get the positive and negative indices lists :
+	positive_indices = [index for index,label in enumerate(B1_labels) if label==1]
+	negative_indices = []
+	for negative_index,phage in enumerate(df_info["Phage"].unique().tolist()) :
+		if KL_type not in dico_prophage_kltype_associated[ID_nodes_B1_r[negative_index]] :
+			negative_indices.append(negative_index)
+	# make the train, test, val lists : 
+	n_samples = len(positive_indices)
+	#train_indices, test_indices, val_indices = [],[],[]
+	# make train : 
+	train_pos = random.sample(positive_indices, int(f_train*n_samples))
+	train_neg = random.sample(negative_indices, int(f_train*n_samples*ratio))
+	train_indices = train_pos + train_neg
+	train_mask = [True if n in train_indices else False for n in range(0,len(B1_labels))]
+	# make test : 
+	pool_positives_test = list(set(positive_indices) - set(train_pos))
+	pool_negatives_test = list(set(negative_indices) - set(train_neg))
+	test_pos = random.sample(pool_positives_test, int(f_test*n_samples))
+	test_neg = random.sample(pool_negatives_test, int(f_test*n_samples*ratio))
+	test_indices = test_pos + test_neg
+	test_mask = [True if n in test_indices else False for n in range(0,len(B1_labels))]
+	# make eval
+	pool_positives_eval = list(set(positive_indices) - set(train_pos) - set(test_pos))
+	pool_negatives_eval = list(set(negative_indices) - set(train_neg) - set(test_neg))
+	eval_pos = random.sample(pool_positives_eval, int(f_eval*n_samples))
+	eval_neg = random.sample(pool_negatives_eval, int(f_eval*n_samples*ratio))
+	eval_indices = eval_pos + eval_neg
+	eval_mask = [True if n in eval_indices else False for n in range(0,len(B1_labels))]
+	# Transfer data to graph :
+	graph_data["B1"].train_mask = torch.tensor(train_mask)
+	graph_data["B1"].test_mask = torch.tensor(test_mask)
+	graph_data["B1"].eval_mask = torch.tensor(eval_mask)
+	
+	return graph_data
